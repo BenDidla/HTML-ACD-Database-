@@ -1,5 +1,5 @@
 // ------------------------------------------------------------------------
-// Roles and in-memory "database"
+// Roles and state
 // ------------------------------------------------------------------------
 const ROLE_RM = "RM";
 const ROLE_TAC = "TAC";
@@ -7,126 +7,7 @@ const ROLE_QUALITY = "Quality";
 const ROLE_ADMIN = "Admin";
 
 let CURRENT_ROLE = ROLE_RM;
-let AUDIT_LOG = []; // {entity_type, entity_id, actor, action, before, after, timestamp}
-
-let PROJECTS = [
-  {
-    project_id: "ACD000001",
-    title: "HV battery contactor weld – MG4 UK",
-    description: "Intermittent no-start, DTC P0AA1, contactor weld suspected in cold soak.",
-    market: "UK",
-    region: "EU",
-    model: "MG4",
-    platform: "MSP",
-    part_no: "12345678",
-    vin: "LSJWH4090PN100001",
-    symptom_code: "NS-01",
-    severity: 1,
-    status: "Containment",
-    labels: ["HV", "Battery", "Safety", "EV"],
-    created_by: "quality.eu",
-    created_at: "2025-09-01",
-    age_days: 86,
-    bin_coverage_ratio: 0.96,
-    sources: [
-      { source_id: "S12345", source_type: "SSNW" },
-      { source_id: "W99887", source_type: "Warranty" }
-    ]
-  },
-  {
-    project_id: "ACD000002",
-    title: "ICE misfire – HS 1.5T APAC",
-    description: "Customer complaints of rough idle and MIL, usually warm restarts.",
-    market: "Australia",
-    region: "APAC",
-    model: "HS",
-    platform: "SSA",
-    part_no: "87654321",
-    vin: "LSJWH4097PN065724",
-    symptom_code: "MI-03",
-    severity: 2,
-    status: "Active",
-    labels: ["ICE", "Engine", "Drivability"],
-    created_by: "tac.au",
-    created_at: "2025-10-10",
-    age_days: 47,
-    bin_coverage_ratio: 0.84,
-    sources: [
-      { source_id: "S22334", source_type: "SSNW" },
-      { source_id: "W66789", source_type: "Warranty" }
-    ]
-  },
-  {
-    project_id: "ACD000003",
-    title: "Infotainment freeze – ZS EV EU",
-    description: "Screen unresponsive after 30–40 min drive, logs show watchdog reset.",
-    market: "Germany",
-    region: "EU",
-    model: "ZS EV",
-    platform: "SSA-EV",
-    part_no: "33445566",
-    vin: "LSJW74097PZ173546",
-    symptom_code: "IF-02",
-    severity: 3,
-    status: "Corrective",
-    labels: ["Software", "HMI"],
-    created_by: "quality.eu",
-    created_at: "2025-08-18",
-    age_days: 100,
-    bin_coverage_ratio: 0.92,
-    sources: [
-      { source_id: "S87342", source_type: "SSNW" }
-    ]
-  },
-  {
-    project_id: "ACD000004",
-    title: "Water leak – ZS ICE roof antenna",
-    description: "Damp headliner around roof antenna in heavy rain.",
-    market: "UK",
-    region: "EU",
-    model: "ZS ICE",
-    platform: "SSA",
-    part_no: "99887766",
-    vin: "LSJWS4095SZ694837",
-    symptom_code: "WL-01",
-    severity: 2,
-    status: "Monitoring",
-    labels: ["Body", "Water leak"],
-    created_by: "quality.eu",
-    created_at: "2025-07-01",
-    age_days: 148,
-    bin_coverage_ratio: 0.88,
-    sources: [
-      { source_id: "S44556", source_type: "SSNW" },
-      { source_id: "W22446", source_type: "Warranty" }
-    ]
-  },
-  {
-    project_id: "ACD000005",
-    title: "HV charger communication DTC – MG5 UK",
-    description: "Random charge session aborts, EVCC-OBC CAN timeouts.",
-    market: "UK",
-    region: "EU",
-    model: "MG5",
-    platform: "SSA-EV",
-    part_no: "55667788",
-    vin: "LSJWH4095PN078214",
-    symptom_code: "CH-04",
-    severity: 1,
-    status: "Closed",
-    labels: ["EVCC", "OBC", "Charging"],
-    created_by: "quality.eu",
-    created_at: "2025-06-01",
-    age_days: 178,
-    bin_coverage_ratio: 0.99,
-    sources: [
-      { source_id: "S99881", source_type: "SSNW" },
-      { source_id: "W99001", source_type: "Warranty" },
-      { source_id: "T4411", source_type: "TAC" }
-    ]
-  }
-];
-
+let PROJECTS = [];
 let SELECTED_PROJECT_ID = null;
 
 // Table & detail references
@@ -134,14 +15,110 @@ const tableBody = document.querySelector("#projectsTable tbody");
 const detailContent = document.getElementById("detailContent");
 
 // ------------------------------------------------------------------------
+// Backend helpers
+// ------------------------------------------------------------------------
+async function apiLogin(role) {
+  const res = await fetch("/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error("Login failed: " + txt);
+  }
+}
+
+async function loadProjectsFromBackend() {
+  // Apply current filters when fetching
+  const term = document.getElementById("searchInput").value.trim();
+  const status = document.getElementById("filterStatus").value;
+  const model = document.getElementById("filterModel").value;
+  const market = document.getElementById("filterMarket").value;
+
+  const params = new URLSearchParams();
+  if (term) params.set("q", term);
+  if (status !== "ALL") params.set("status", status);
+  if (model !== "ALL") params.set("model", model);
+  if (market !== "ALL") params.set("market", market);
+
+  const res = await fetch("/api/projects?" + params.toString());
+  if (!res.ok) {
+    const txt = await res.text();
+    console.error("Failed to load projects:", txt);
+    return;
+  }
+  const data = await res.json();
+  PROJECTS = data.projects || [];
+}
+
+async function backendCreateProject(payload) {
+  const res = await fetch("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error("Create failed: " + txt);
+  }
+  return res.json();
+}
+
+async function backendUpdateStatus(project_id, newStatus) {
+  const res = await fetch(`/api/projects/${project_id}/status`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: newStatus }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error("Status update failed: " + txt);
+  }
+  return res.json();
+}
+
+async function backendBinSource(source_id, source_type, project_id) {
+  const res = await fetch("/api/bin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_id, source_type, project_id }),
+  });
+  if (res.status === 409) {
+    const data = await res.json();
+    alert(
+      `Source already linked to ${data.existing_project_id} (AC-2).`
+    );
+    return null;
+  }
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error("Bin failed: " + txt);
+  }
+  return res.json();
+}
+
+async function backendLoadAudit(project_id) {
+  const res = await fetch(`/api/audit/${project_id}`);
+  if (!res.ok) {
+    return { events: [] };
+  }
+  return res.json();
+}
+
+// ------------------------------------------------------------------------
 // Utility helpers
 // ------------------------------------------------------------------------
 function statusClass(status) {
   switch (status) {
-    case "Containment": return "status-containment";
-    case "Corrective": return "status-corrective";
-    case "Closed": return "status-closed";
-    default: return "status-open";
+    case "Containment":
+      return "status-containment";
+    case "Corrective":
+      return "status-corrective";
+    case "Closed":
+      return "status-closed";
+    default:
+      return "status-open";
   }
 }
 
@@ -150,32 +127,28 @@ function severityClass(sev) {
 }
 
 function getProjectById(pid) {
-  return PROJECTS.find(p => p.project_id === pid) || null;
-}
-
-function audit(entity_type, entity_id, action, before, after) {
-  AUDIT_LOG.push({
-    entity_type,
-    entity_id,
-    actor: CURRENT_ROLE,
-    action,
-    before: JSON.stringify(before),
-    after: JSON.stringify(after),
-    timestamp: new Date().toISOString()
-  });
+  return PROJECTS.find((p) => p.project_id === pid) || null;
 }
 
 // ------------------------------------------------------------------------
-// Filters & KPIs
+// Filters & KPIs (filtered client-side using PROJECTS already loaded)
 // ------------------------------------------------------------------------
-function getFilteredProjects() {
+function getFilteredProjectsFromMemory() {
   const term = document.getElementById("searchInput").value.trim().toLowerCase();
   const statusFilter = document.getElementById("filterStatus").value;
   const modelFilter = document.getElementById("filterModel").value;
   const marketFilter = document.getElementById("filterMarket").value;
 
-  return PROJECTS.filter(p => {
-    const haystack = (p.project_id + " " + (p.vin || "") + " " + (p.part_no || "") + " " + (p.title || "")).toLowerCase();
+  return PROJECTS.filter((p) => {
+    const haystack = (
+      p.project_id +
+      " " +
+      (p.vin || "") +
+      " " +
+      (p.part_no || "") +
+      " " +
+      (p.title || "")
+    ).toLowerCase();
     if (term && !haystack.includes(term)) return false;
     if (statusFilter !== "ALL" && p.status !== statusFilter) return false;
     if (modelFilter !== "ALL" && p.model !== modelFilter) return false;
@@ -187,11 +160,15 @@ function getFilteredProjects() {
 function updateKpis(filtered) {
   const total = filtered.length;
   const openStatuses = ["Ready", "Active", "Containment", "Corrective", "Monitoring"];
-  const openCount = filtered.filter(p => openStatuses.includes(p.status)).length;
-  const containmentCount = filtered.filter(p => p.status === "Containment").length;
-  const correctiveCount = filtered.filter(p => p.status === "Corrective").length;
+  const openCount = filtered.filter((p) => openStatuses.includes(p.status)).length;
+  const containmentCount = filtered.filter((p) => p.status === "Containment").length;
+  const correctiveCount = filtered.filter((p) => p.status === "Corrective").length;
   const avgBin = filtered.length
-    ? Math.round(filtered.reduce((acc, p) => acc + (p.bin_coverage_ratio || 0), 0) / filtered.length * 100)
+    ? Math.round(
+        (filtered.reduce((acc, p) => acc + (p.bin_coverage_ratio || 0), 0) /
+          filtered.length) *
+          100
+      )
     : 0;
 
   document.getElementById("kpiTotal").textContent = total;
@@ -201,10 +178,10 @@ function updateKpis(filtered) {
   document.getElementById("kpiBinCoverage").textContent = avgBin + "%";
 }
 
-function populateFilters() {
+function populateFiltersFromProjects() {
   const models = new Set();
   const markets = new Set();
-  PROJECTS.forEach(p => {
+  PROJECTS.forEach((p) => {
     models.add(p.model);
     markets.add(p.market);
   });
@@ -212,14 +189,18 @@ function populateFilters() {
   const modelSel = document.getElementById("filterModel");
   const marketSel = document.getElementById("filterMarket");
 
-  models.forEach(m => {
+  // keep the first "ALL" option, remove others
+  modelSel.querySelectorAll("option:not(:first-child)").forEach((o) => o.remove());
+  marketSel.querySelectorAll("option:not(:first-child)").forEach((o) => o.remove());
+
+  models.forEach((m) => {
     const opt = document.createElement("option");
     opt.value = m;
     opt.textContent = m;
     modelSel.appendChild(opt);
   });
 
-  markets.forEach(m => {
+  markets.forEach((m) => {
     const opt = document.createElement("option");
     opt.value = m;
     opt.textContent = m;
@@ -232,7 +213,7 @@ function populateFilters() {
 // ------------------------------------------------------------------------
 function setSelectedRow(projectId) {
   const rows = tableBody.querySelectorAll("tr");
-  rows.forEach(row => {
+  rows.forEach((row) => {
     row.classList.toggle("selected", row.dataset.projectId === projectId);
   });
   SELECTED_PROJECT_ID = projectId;
@@ -240,7 +221,7 @@ function setSelectedRow(projectId) {
 
 function renderTable(filtered) {
   tableBody.innerHTML = "";
-  filtered.forEach(p => {
+  filtered.forEach((p) => {
     const tr = document.createElement("tr");
     tr.dataset.projectId = p.project_id;
     tr.innerHTML = `
@@ -251,7 +232,7 @@ function renderTable(filtered) {
       <td><span class="status-pill ${statusClass(p.status)}">${p.status}</span></td>
       <td><span class="severity-pill ${severityClass(p.severity)}">S${p.severity}</span></td>
       <td>${p.age_days}</td>
-      <td>${p.sources.length}</td>
+      <td>${(p.sources || []).length}</td>
     `;
     tr.addEventListener("click", () => {
       setSelectedRow(p.project_id);
@@ -263,47 +244,64 @@ function renderTable(filtered) {
   document.getElementById("tableCountText").textContent = `${filtered.length} project(s)`;
 }
 
-function renderAudit(project_id) {
-  const evs = AUDIT_LOG
-    .filter(e => e.entity_id === project_id && e.entity_type === "Project")
-    .slice()
-    .reverse();
+async function renderAuditSection(project_id) {
+  const container = document.getElementById("auditContainer");
+  if (!container) return;
+  container.textContent = "Loading audit…";
 
-  if (!evs.length) {
-    return "<div class='hint'>No changes recorded yet (mock).</div>";
+  try {
+    const data = await backendLoadAudit(project_id);
+    const events = data.events || [];
+    if (!events.length) {
+      container.innerHTML = "<div class='hint'>No changes recorded yet.</div>";
+      return;
+    }
+    container.innerHTML = `
+      <div class="audit-list">
+        ${events
+          .map(
+            (ev) => `
+          <div class="audit-item">
+            <div><strong>${ev.action}</strong> by ${ev.actor_role}</div>
+            <div>${new Date(ev.timestamp).toLocaleString()}</div>
+          </div>
+        `
+          )
+          .join("")}
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = "<div class='hint'>Failed to load audit.</div>";
   }
-
-  return `
-    <div class="audit-list">
-      ${evs.map(ev => `
-        <div class="audit-item">
-          <div><strong>${ev.action}</strong> by ${ev.actor}</div>
-          <div>${new Date(ev.timestamp).toLocaleString()}</div>
-        </div>
-      `).join("")}
-    </div>
-  `;
 }
 
 function renderDetail(p) {
   if (!p) {
-    detailContent.innerHTML = "<p class='hint'>Select a project in the table to view details.</p>";
+    detailContent.innerHTML =
+      "<p class='hint'>Select a project in the table to view details.</p>";
     return;
   }
 
-  const labelsHtml = p.labels && p.labels.length
-    ? p.labels.map(l => `<span class="label-chip">${l}</span>`).join("")
-    : "<span class='hint'>No labels yet.</span>";
+  const labelsHtml =
+    p.labels && p.labels.length
+      ? p.labels.map((l) => `<span class="label-chip">${l}</span>`).join("")
+      : "<span class='hint'>No labels yet.</span>";
 
-  const sourcesHtml = p.sources && p.sources.length
-    ? p.sources.map(s => `<span class="sources-pill">${s.source_type} ${s.source_id}</span>`).join("")
+  const sources = p.sources || [];
+  const sourcesHtml = sources.length
+    ? sources
+        .map(
+          (s) =>
+            `<span class="sources-pill">${s.source_type} ${s.source_id}</span>`
+        )
+        .join("")
     : "<span class='hint'>No sources linked yet.</span>";
 
-  const canEditWorkflow = [ROLE_TAC, ROLE_QUALITY, ROLE_ADMIN].includes(CURRENT_ROLE);
+  const canEditWorkflow = [ROLE_TAC, ROLE_QUALITY, ROLE_ADMIN].includes(
+    CURRENT_ROLE
+  );
   const canBin = [ROLE_TAC, ROLE_QUALITY, ROLE_ADMIN].includes(CURRENT_ROLE);
   const canExport = [ROLE_QUALITY, ROLE_ADMIN].includes(CURRENT_ROLE);
-
-  const auditHtml = renderAudit(p.project_id);
 
   detailContent.innerHTML = `
     <div class="banner">
@@ -350,8 +348,14 @@ function renderDetail(p) {
         <option value="Monitoring">Monitoring</option>
         <option value="Closed">Closed</option>
       </select>
-      <button id="statusBtn" class="mini-btn" ${canEditWorkflow ? "" : "disabled"}>Set Status</button>
-      ${!canEditWorkflow ? "<span class='hint'>Only TAC / Quality / Admin can move workflow (AC-3).</span>" : ""}
+      <button id="statusBtn" class="mini-btn" ${
+        canEditWorkflow ? "" : "disabled"
+      }>Set Status</button>
+      ${
+        !canEditWorkflow
+          ? "<span class='hint'>Only TAC / Quality / Admin can move workflow (AC-3).</span>"
+          : ""
+      }
     </div>
 
     <div class="section-title-small">Bin Source (F2 / UR-7)</div>
@@ -362,179 +366,158 @@ function renderDetail(p) {
         <option value="Warranty">Warranty</option>
         <option value="TAC">TAC</option>
       </select>
-      <button id="binBtn" class="mini-btn" ${canBin ? "" : "disabled"}>Bin → ${p.project_id}</button>
+      <button id="binBtn" class="mini-btn" ${
+        canBin ? "" : "disabled"
+      }>Bin → ${p.project_id}</button>
     </div>
-    ${!canBin ? "<div class='hint'>Only TAC / Quality / Admin can bin SSNW/Warranty/TAC to a project.</div>" : ""}
+    ${
+      !canBin
+        ? "<div class='hint'>Only TAC / Quality / Admin can bin SSNW/Warranty/TAC to a project.</div>"
+        : ""
+    }
 
     <div class="section-title-small">Audit log (UR-11 / SR-11)</div>
-    ${auditHtml}
+    <div id="auditContainer" class="hint">Loading audit…</div>
 
     <div class="section-title-small">Export portfolio (UR-9 / SR-9)</div>
     <div class="mini-form">
-      <button id="exportBtn" class="mini-btn" ${canExport ? "" : "disabled"}>Download CSV (mock)</button>
-      ${!canExport ? "<span class='hint'>Export reserved for Quality / Admin.</span>" : ""}
+      <button id="exportBtn" class="mini-btn" ${
+        canExport ? "" : "disabled"
+      }>Download CSV</button>
+      ${
+        !canExport
+          ? "<span class='hint'>Export reserved for Quality / Admin.</span>"
+          : ""
+      }
     </div>
   `;
 
-  // Status button
+  // Hook status
   const statusBtn = document.getElementById("statusBtn");
   if (statusBtn && canEditWorkflow) {
-    statusBtn.onclick = () => {
+    statusBtn.onclick = async () => {
       const newStatus = document.getElementById("statusSelect").value;
-      updateStatus(p.project_id, newStatus);
+      try {
+        const updated = await backendUpdateStatus(p.project_id, newStatus);
+        // update local copy
+        const idx = PROJECTS.findIndex(
+          (x) => x.project_id === updated.project_id
+        );
+        if (idx >= 0) PROJECTS[idx] = updated;
+        refreshAll();
+        renderDetail(updated);
+      } catch (err) {
+        alert(err.message);
+      }
     };
   }
 
-  // Bin button
+  // Hook bin
   const binBtn = document.getElementById("binBtn");
   if (binBtn && canBin) {
-    binBtn.onclick = () => {
+    binBtn.onclick = async () => {
       const sid = document.getElementById("binSourceId").value.trim();
       const stype = document.getElementById("binSourceType").value;
       if (!sid) {
         alert("Enter a source ID");
         return;
       }
-      binSource(sid, stype, p.project_id);
+      try {
+        const updated = await backendBinSource(sid, stype, p.project_id);
+        if (!updated) return;
+        const idx = PROJECTS.findIndex(
+          (x) => x.project_id === updated.project_id
+        );
+        if (idx >= 0) PROJECTS[idx] = updated;
+        refreshAll();
+        renderDetail(updated);
+      } catch (err) {
+        alert(err.message);
+      }
     };
   }
 
-  // Export button
+  // Export
   const exportBtn = document.getElementById("exportBtn");
   if (exportBtn && canExport) {
-    exportBtn.onclick = () => exportCsv();
+    exportBtn.onclick = () => {
+      window.location = "/api/export";
+    };
   }
+
+  // Load audit from backend
+  renderAuditSection(p.project_id);
 }
 
 // ------------------------------------------------------------------------
 // Actions
 // ------------------------------------------------------------------------
-function updateStatus(project_id, newStatus) {
-  if (!["Ready", "Active", "Containment", "Corrective", "Monitoring", "Closed"].includes(newStatus)) {
-    alert("Invalid status");
-    return;
-  }
-  const p = getProjectById(project_id);
-  if (!p) return;
-  const before = { ...p };
-  p.status = newStatus;
-  audit("Project", project_id, "UPDATE_STATUS", before, p);
-  refreshAll();
-  renderDetail(getProjectById(project_id));
-}
-
-function binSource(source_id, source_type, project_id) {
-  // enforce 1 source → 1 project (SR-7 / AC-2)
-  for (const p of PROJECTS) {
-    for (const s of p.sources) {
-      if (s.source_id === source_id && s.source_type === source_type) {
-        if (p.project_id !== project_id) {
-          alert(`Source already linked to ${p.project_id} (AC-2).`);
-          return;
-        }
-      }
-    }
-  }
-  const p = getProjectById(project_id);
-  if (!p) return;
-  const before = { ...p };
-  p.sources.push({ source_id, source_type });
-  p.bin_coverage_ratio = Math.min(1, p.bin_coverage_ratio + 0.02);
-  audit("Project", project_id, "BIN_SOURCE", before, p);
-  refreshAll();
-  renderDetail(p);
-}
-
-function generateProjectId() {
-  const ids = PROJECTS.map(p => Number(p.project_id.replace("ACD", "")));
-  const max = ids.length ? Math.max(...ids) : 0;
-  const next = max + 1;
-  return "ACD" + next.toString().padStart(6, "0");
-}
-
-function createProject() {
+async function createProject() {
   if (![ROLE_TAC, ROLE_QUALITY, ROLE_ADMIN].includes(CURRENT_ROLE)) {
     alert("Only TAC / Quality / Admin can create projects (UR-4).");
     return;
   }
+
   const title = prompt("Title:");
   if (!title) return;
   const symptom = prompt("Symptom code (e.g. NS-01):") || "";
   const market = prompt("Market (e.g. UK):") || "UK";
   const model = prompt("Model (e.g. MG4):") || "MG4";
-  const source_id = prompt("Initial source ID (SSNW/Warranty/TAC):") || "";
-  const source_type = prompt("Source type (SSNW/Warranty/TAC):") || "SSNW";
+  const source_id =
+    prompt("Initial source ID (SSNW/Warranty/TAC) – optional:") || "";
+  const source_type = source_id
+    ? prompt("Source type (SSNW/Warranty/TAC):") || "SSNW"
+    : "";
 
-  const pid = generateProjectId();
-  const proj = {
-    project_id: pid,
+  const payload = {
     title,
-    description: "",
-    market,
-    region: "EU",
-    model,
-    platform: "",
-    part_no: "",
-    vin: "",
     symptom_code: symptom,
-    severity: 3,
-    status: "Ready",
-    labels: [],
-    created_by: CURRENT_ROLE,
-    created_at: new Date().toISOString().slice(0, 10),
-    age_days: 0,
-    bin_coverage_ratio: source_id ? 0.2 : 0,
-    sources: source_id ? [{ source_id, source_type }] : []
+    market,
+    model,
   };
-  PROJECTS.push(proj);
-  audit("Project", pid, "CREATE", {}, proj);
-  populateFilters();
-  refreshAll();
-  setSelectedRow(pid);
-  renderDetail(proj);
-}
+  if (source_id) {
+    payload.source_id = source_id;
+    payload.source_type = source_type;
+  }
 
-function exportCsv() {
-  const filtered = getFilteredProjects();
-  const lines = ["project_id,title,market,model,status,severity,created_at,vin,part_no"];
-  filtered.forEach(p => {
-    const line = [
-      p.project_id,
-      (p.title || "").replace(/,/g, " "),
-      p.market || "",
-      p.model || "",
-      p.status || "",
-      p.severity,
-      p.created_at || "",
-      p.vin || "",
-      p.part_no || ""
-    ].join(",");
-    lines.push(line);
-  });
-  const csv = lines.join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "projects.csv";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  try {
+    const created = await backendCreateProject(payload);
+    PROJECTS.push(created);
+    populateFiltersFromProjects();
+    refreshAll();
+    setSelectedRow(created.project_id);
+    renderDetail(created);
+  } catch (err) {
+    alert(err.message);
+  }
 }
 
 // ------------------------------------------------------------------------
 // Role handling
 // ------------------------------------------------------------------------
-function updateRole(role) {
+async function updateRole(role) {
+  try {
+    await apiLogin(role);
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
   CURRENT_ROLE = role;
   const info = document.getElementById("roleInfo");
   let desc = "";
-  if (role === ROLE_RM) desc = "Role: RM – View projects, no workflow / binning.";
-  if (role === ROLE_TAC) desc = "Role: TAC – Create projects, set Ready, limited workflow.";
-  if (role === ROLE_QUALITY) desc = "Role: Quality – Full edit, workflow, binning, export.";
-  if (role === ROLE_ADMIN) desc = "Role: Admin – Full control; like Quality + config.";
+  if (role === ROLE_RM)
+    desc = "Role: RM – View projects, no workflow / binning.";
+  if (role === ROLE_TAC)
+    desc = "Role: TAC – Create projects, set Ready, limited workflow.";
+  if (role === ROLE_QUALITY)
+    desc =
+      "Role: Quality – Full edit, workflow, binning, export.";
+  if (role === ROLE_ADMIN)
+    desc =
+      "Role: Admin – Full control; like Quality + config.";
   info.textContent = desc;
+
+  // no need to reload projects when role changes, but we refresh KPIs/permissions
   refreshAll();
   if (SELECTED_PROJECT_ID) {
     const p = getProjectById(SELECTED_PROJECT_ID);
@@ -547,8 +530,9 @@ function updateRole(role) {
 // ------------------------------------------------------------------------
 // Global refresh & boot
 // ------------------------------------------------------------------------
-function refreshAll() {
-  const filtered = getFilteredProjects();
+async function refreshAll() {
+  // Filter is applied in-memory
+  const filtered = getFilteredProjectsFromMemory();
   updateKpis(filtered);
   renderTable(filtered);
 
@@ -562,29 +546,63 @@ function refreshAll() {
   }
 }
 
-function boot() {
-  populateFilters();
+async function boot() {
+  // default to RM on first load
+  try {
+    await apiLogin(ROLE_RM);
+  } catch (err) {
+    console.error(err);
+  }
+  CURRENT_ROLE = ROLE_RM;
+
+  await loadProjectsFromBackend();
+  populateFiltersFromProjects();
   refreshAll();
 
-  document.getElementById("searchInput").addEventListener("input", refreshAll);
-  document.getElementById("filterStatus").addEventListener("change", refreshAll);
-  document.getElementById("filterModel").addEventListener("change", refreshAll);
-  document.getElementById("filterMarket").addEventListener("change", refreshAll);
-
-  document.getElementById("resetFiltersBtn").addEventListener("click", () => {
-    document.getElementById("searchInput").value = "";
-    document.getElementById("filterStatus").value = "ALL";
-    document.getElementById("filterModel").value = "ALL";
-    document.getElementById("filterMarket").value = "ALL";
+  // wiring
+  document.getElementById("searchInput").addEventListener("input", async () => {
+    await loadProjectsFromBackend();
     refreshAll();
   });
+  document
+    .getElementById("filterStatus")
+    .addEventListener("change", async () => {
+      await loadProjectsFromBackend();
+      refreshAll();
+    });
+  document
+    .getElementById("filterModel")
+    .addEventListener("change", async () => {
+      await loadProjectsFromBackend();
+      refreshAll();
+    });
+  document
+    .getElementById("filterMarket")
+    .addEventListener("change", async () => {
+      await loadProjectsFromBackend();
+      refreshAll();
+    });
 
-  document.getElementById("roleSelect").addEventListener("change", e => {
-    updateRole(e.target.value);
-  });
+  document
+    .getElementById("resetFiltersBtn")
+    .addEventListener("click", async () => {
+      document.getElementById("searchInput").value = "";
+      document.getElementById("filterStatus").value = "ALL";
+      document.getElementById("filterModel").value = "ALL";
+      document.getElementById("filterMarket").value = "ALL";
+      await loadProjectsFromBackend();
+      refreshAll();
+    });
 
-  document.getElementById("newProjectBtn").addEventListener("click", createProject);
+  document
+    .getElementById("roleSelect")
+    .addEventListener("change", (e) => {
+      updateRole(e.target.value);
+    });
+
+  document
+    .getElementById("newProjectBtn")
+    .addEventListener("click", createProject);
 }
 
 window.addEventListener("DOMContentLoaded", boot);
-
