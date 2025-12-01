@@ -1,1 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ACD Quality Projects Dashboard (Mock)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div>
+      <div class="logo">ACD<span>Quality</span></div>
+    </div>
+
+    <div>
+      <div class="nav-section-title">Portfolio</div>
+      <ul class="nav-list">
+        <li class="nav-item active">Dashboard</li>
+        <li class="nav-item">Projects</li>
+        <li class="nav-item">Sources</li>
+      </ul>
+    </div>
+
+    <div>
+      <div class="nav-section-title">Admin</div>
+      <ul class="nav-list">
+        <li class="nav-item">RBAC & Config</li>
+      </ul>
+    </div>
+
+    <div class="sidebar-footer">
+      Mock only – data in memory.<br />
+      UR & SR aligned to ACD spec.
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Top bar -->
+    <section class="top-bar">
+      <div class="top-bar-title">
+        <h1>Quality Projects Portfolio</h1>
+        <p id="roleInfo">Role: <strong>RM</strong> – view only (UR-1 / UR-3).</p>
+      </div>
+      <div class="top-bar-controls">
+        <input id="searchInput" class="input" type="text" placeholder="Search Project ID / VIN / part..." />
+        <select id="filterStatus" class="select">
+          <option value="ALL">All statuses</option>
+          <option value="Ready">Ready</option>
+          <option value="Active">Active</option>
+          <option value="Containment">Containment</option>
+          <option value="Corrective">Corrective</option>
+          <option value="Monitoring">Monitoring</option>
+          <option value="Closed">Closed</option>
+        </select>
+        <select id="filterModel" class="select">
+          <option value="ALL">All models</option>
+        </select>
+        <select id="filterMarket" class="select">
+          <option value="ALL">All markets</option>
+        </select>
+        <select id="roleSelect" class="select">
+          <option value="RM">RM (view + comment)</option>
+          <option value="TAC">TAC (create + Ready)</option>
+          <option value="Quality">Quality (full workflow)</option>
+          <option value="Admin">Admin (full + config)</option>
+        </select>
+        <button id="newProjectBtn" class="btn">+ New Project</button>
+      </div>
+    </section>
+
+    <!-- KPI cards -->
+    <section class="cards">
+      <div class="card">
+        <div class="card-label">Total Projects</div>
+        <div class="card-value" id="kpiTotal">0</div>
+        <div class="card-subtext">All projects in view</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Open (Active→Monitoring)</div>
+        <div class="card-value" id="kpiOpen">0</div>
+        <div class="card-subtext">Includes Ready, Active, Containment, Corrective, Monitoring</div>
+      </div>
+      <div class="card">
+        <div class="card-label">In Containment</div>
+        <div class="card-value" id="kpiContainment">0</div>
+        <div class="card-subtext">Interim actions running</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Corrective Action</div>
+        <div class="card-value" id="kpiCorrective">0</div>
+        <div class="card-subtext">8D / 5-Why, DVP, validation</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Bin Coverage</div>
+        <div class="card-value" id="kpiBinCoverage">0%</div>
+        <div class="card-subtext">SSNW/Warranty/TAC records with 1:1 project (sample)</div>
+      </div>
+    </section>
+
+    <!-- Content -->
+    <section class="content-layout">
+      <!-- Left side: table -->
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Projects (filtered)</div>
+            <div class="panel-subtitle" id="tableCountText">0 projects</div>
+          </div>
+          <div>
+            <button id="resetFiltersBtn" class="btn btn-secondary">Reset filters</button>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table id="projectsTable">
+            <thead>
+              <tr>
+                <th>Project ID</th>
+                <th>Title</th>
+                <th>Model</th>
+                <th>Market</th>
+                <th>Status</th>
+                <th>Severity</th>
+                <th>Age (days)</th>
+                <th>Sources</th>
+              </tr>
+            </thead>
+            <tbody><!-- filled by JS --></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Right side: detail panel -->
+      <section class="panel">
+        <div id="detailContent">
+          <p class="hint">
+            Select a project in the table to view its details, bin sources (UR-7), or move workflow (UR-6) depending on your role.
+          </p>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
 
